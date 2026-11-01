@@ -9,6 +9,22 @@ const app = express();
 app.set("trust proxy", true); // Render par sahi https link ke liye
 app.use(express.json());
 app.use(express.static("public"));
+// Simple rate limit: ek IP se 1 minute mein max 6 shopping requests
+const hits = new Map();
+function limiter(req, res, next) {
+  const now = Date.now();
+  const list = (hits.get(req.ip) || []).filter((t) => now - t < 60000);
+  if (list.length >= 6) {
+    return res.status(429).json({
+      status: "error",
+      message: "Bahut zyada requests. 1 minute baad dobara try karo.",
+    });
+  }
+  list.push(now);
+  hits.set(req.ip, list);
+  next();
+}
+app.use("/api/shop", limiter);
 
 // orderId -> { status: "waiting" | "paid" | "blocked" | "cancelled" | "error", ... }
 const results = new Map();
