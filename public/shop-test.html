@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Shop test</title></head>
+<body style="font-family:system-ui;max-width:640px;margin:30px auto;padding:0 14px">
+  <h2>Paykite shop test</h2>
+  <input id="msg" style="width:75%;padding:8px" value="Mujhe wireless headphones chahiye, 40 dollar se zyada nahi">
+  <button id="go" style="padding:8px 14px">Send</button>
+  <pre id="out" style="white-space:pre-wrap;background:#f3f3f3;padding:12px;margin-top:14px"></pre>
+  <div id="pay"></div>
+
+<script>
+const out = document.getElementById("out");
+const pay = document.getElementById("pay");
+
+document.getElementById("go").onclick = async () => {
+  out.textContent = "Soch raha hoon...";
+  pay.textContent = "";
+  const r = await (await fetch("/api/shop", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: document.getElementById("msg").value }),
+  })).json();
+
+  let text = "Status: " + r.status + "\n\n";
+  (r.transcript || []).forEach((t) => {
+    text += (t.from === "buyer" ? "Buyer " : "Seller") + " [" + t.action + "] $" + t.price + " - " + t.message + "\n";
+  });
+  if (r.message) text += "\n" + r.message;
+  out.textContent = text;
+
+  if (r.status === "ready_to_pay") {
+    const a = document.createElement("a");
+    a.href = r.approveUrl; a.target = "_blank";
+    a.textContent = "Pay $" + r.price + " with PayPal (naye tab mein)";
+    pay.appendChild(a);
+
+    const timer = setInterval(async () => {
+      const s = await (await fetch("/api/order/" + r.orderId)).json();
+      if (s.status !== "waiting") {
+        clearInterval(timer);
+        out.textContent += "\n\nORDER RESULT: " + JSON.stringify(s);
+      }
+    }, 2000);
+  }
+};
+</script>
+</body>
+</html>
