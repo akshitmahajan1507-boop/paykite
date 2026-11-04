@@ -1,0 +1,123 @@
+{
+  "info": {
+    "name": "Paykite - PayPal Sandbox + Live App",
+    "description": "PayPal sandbox API calls and automated checks for the Paykite shopping agent. Secrets live in a Postman environment (client_id, client_secret, receiver_email), never in this file.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "paypal_base", "value": "https://api-m.sandbox.paypal.com" },
+    { "key": "app_url", "value": "https://paykite.onrender.com" }
+  ],
+  "item": [
+    {
+      "name": "1. PayPal - Get access token",
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('Token mila (200)', function () { pm.response.to.have.status(200); });",
+        "pm.environment.set('access_token', pm.response.json().access_token);"
+      ] } }],
+      "request": {
+        "method": "POST",
+        "auth": { "type": "basic", "basic": [
+          { "key": "username", "value": "{{client_id}}", "type": "string" },
+          { "key": "password", "value": "{{client_secret}}", "type": "string" }
+        ] },
+        "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+        "body": { "mode": "urlencoded", "urlencoded": [{ "key": "grant_type", "value": "client_credentials" }] },
+        "url": { "raw": "{{paypal_base}}/v1/oauth2/token", "host": ["{{paypal_base}}"], "path": ["v1", "oauth2", "token"] }
+      }
+    },
+    {
+      "name": "2. PayPal - Create order",
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('Order bana (201)', function () { pm.response.to.have.status(201); });",
+        "const j = pm.response.json();",
+        "pm.environment.set('order_id', j.id);",
+        "const link = (j.links || []).find(function (l) { return l.rel === 'payer-action' || l.rel === 'approve'; });",
+        "if (link) { pm.environment.set('approve_url', link.href); }",
+        "pm.test('Approve link mila', function () { pm.expect(link).to.exist; });"
+      ] } }],
+      "request": {
+        "method": "POST",
+        "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "PayPal-Request-Id", "value": "{{$guid}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"intent\": \"CAPTURE\",\n  \"purchase_units\": [{\n    \"description\": \"Postman test order\",\n    \"amount\": {\n      \"currency_code\": \"USD\",\n      \"value\": \"20.00\",\n      \"breakdown\": { \"item_total\": { \"currency_code\": \"USD\", \"value\": \"20.00\" } }\n    },\n    \"items\": [{ \"name\": \"Postman test item\", \"quantity\": \"1\", \"unit_amount\": { \"currency_code\": \"USD\", \"value\": \"20.00\" } }]\n  }],\n  \"payment_source\": {\n    \"paypal\": {\n      \"experience_context\": {\n        \"brand_name\": \"Paykite Demo Store\",\n        \"user_action\": \"PAY_NOW\",\n        \"payment_method_preference\": \"IMMEDIATE_PAYMENT_REQUIRED\",\n        \"return_url\": \"{{app_url}}/return\",\n        \"cancel_url\": \"{{app_url}}/cancel\"\n      }\n    }\n  }\n}" },
+        "url": { "raw": "{{paypal_base}}/v2/checkout/orders", "host": ["{{paypal_base}}"], "path": ["v2", "checkout", "orders"] }
+      }
+    },
+    {
+      "name": "3. PayPal - Capture order (approve in browser first)",
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('Capture hua (201)', function () { pm.response.to.have.status(201); });",
+        "pm.test('Status COMPLETED', function () { pm.expect(pm.response.json().status).to.eql('COMPLETED'); });"
+      ] } }],
+      "request": {
+        "method": "POST",
+        "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{}" },
+        "url": { "raw": "{{paypal_base}}/v2/checkout/orders/{{order_id}}/capture", "host": ["{{paypal_base}}"], "path": ["v2", "checkout", "orders", "{{order_id}}", "capture"] }
+      }
+    },
+    {
+      "name": "4. PayPal - Send payout",
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('Payout accept hua (201)', function () { pm.response.to.have.status(201); });"
+      ] } }],
+      "request": {
+        "method": "POST",
+        "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"sender_batch_header\": {\n    \"sender_batch_id\": \"postman_{{$timestamp}}\",\n    \"email_subject\": \"You have a payment\"\n  },\n  \"items\": [{\n    \"recipient_type\": \"EMAIL\",\n    \"amount\": { \"value\": \"5.00\", \"currency\": \"USD\" },\n    \"receiver\": \"{{receiver_email}}\",\n    \"note\": \"Postman test payout\",\n    \"sender_item_id\": \"item_{{$timestamp}}\"\n  }]\n}" },
+        "url": { "raw": "{{paypal_base}}/v1/payments/payouts", "host": ["{{paypal_base}}"], "path": ["v1", "payments", "payouts"] }
+      }
+    },
+    {
+      "name": "5. App - Products (seller secret must not leak)",
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "const items = pm.response.json();",
+        "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+        "pm.test('12 products', function () { pm.expect(items).to.have.lengthOf(12); });",
+        "pm.test('minPrice kisi product mein nahi', function () { items.forEach(function (p) { pm.expect(p).to.not.have.property('minPrice'); }); });"
+      ] } }],
+      "request": { "method": "GET", "header": [], "url": { "raw": "{{app_url}}/api/products", "host": ["{{app_url}}"], "path": ["api", "products"] } }
+    },
+    {
+      "name": "6. App - Spending rules state",
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "const s = pm.response.json();",
+        "pm.test('Rules sahi hain', function () { pm.expect(s.maxPerOrder).to.eql(50); pm.expect(s.monthlyBudget).to.eql(200); });"
+      ] } }],
+      "request": { "method": "GET", "header": [], "url": { "raw": "{{app_url}}/api/state", "host": ["{{app_url}}"], "path": ["api", "state"] } }
+    },
+    {
+      "name": "7. App - Haggle for headphones (budget 40)",
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "const r = pm.response.json();",
+        "pm.test('Deal ya no_deal', function () { pm.expect(['ready_to_pay', 'no_deal']).to.include(r.status); });",
+        "if (r.status === 'ready_to_pay') { pm.test('Deal budget ke andar', function () { pm.expect(r.price).to.be.at.most(40); }); }"
+      ] } }],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{ \"productId\": \"p1\", \"maxBudget\": 40 }" },
+        "url": { "raw": "{{app_url}}/api/shop", "host": ["{{app_url}}"], "path": ["api", "shop"] }
+      }
+    },
+    {
+      "name": "8. App - Rule blocks over-limit buy (smart watch)",
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "const r = pm.response.json();",
+        "pm.test('Per-order rule ne roka', function () { pm.expect(r.status).to.eql('blocked'); });"
+      ] } }],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{ \"productId\": \"p3\", \"maxBudget\": 75 }" },
+        "url": { "raw": "{{app_url}}/api/shop", "host": ["{{app_url}}"], "path": ["api", "shop"] }
+      }
+    }
+  ]
+}

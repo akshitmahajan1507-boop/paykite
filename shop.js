@@ -23,6 +23,13 @@ async function startPurchase({ productId, query, maxBudget, baseUrl }) {
     }
     product = results[0];
   }
+
+  const neg = await negotiate({ productId: product.id, maxBudget: budget });
+
+  if (!neg.deal) {
+    return { status: "no_deal", product, transcript: neg.transcript, message: "Seller is budget par nahi maana." };
+  }
+
   // Rules check 1: deal ke waqt
   const rule = checkRules(neg.price);
   if (!rule.ok) {
