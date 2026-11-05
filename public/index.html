@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Paykite Store</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪁</text></svg>" />
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@36.1.0/dist/ag-grid-community.min.js"></script>
 <style>
   :root {
     --bg:#f5f6fa; --card:#fff; --line:#e6e8f0; --text:#161a2b; --muted:#6b7390;
@@ -29,6 +30,7 @@
   .rule { font-size:11px; color:var(--muted); margin-top:5px; }
 
   .main { max-width:1280px; margin:0 auto; padding:20px; display:grid; grid-template-columns:1fr 390px; gap:22px; align-items:start; }
+  .left { min-width:0; }
   .hero { padding:22px 24px; border-radius:20px; color:#fff; margin-bottom:20px; background:linear-gradient(120deg,#4f46e5,#06b6d4); }
   .hero h2 { margin:0 0 6px; font-size:22px; letter-spacing:-.4px; }
   .hero p { margin:0; opacity:.9; font-size:14px; line-height:1.5; max-width:560px; }
@@ -46,14 +48,22 @@
   .buy { margin-top:auto; padding:10px; border:0; border-radius:11px; background:var(--text); color:#fff; font-weight:700; font-size:13px; cursor:pointer; transition:.15s; }
   .buy:hover:not(:disabled) { background:var(--accent); }
   .buy:disabled { opacity:.45; cursor:default; }
-  .orders { margin-top:26px; background:var(--card); border:1px solid var(--line); border-radius:18px; padding:16px 18px; }
-  .orders h3 { margin:0 0 8px; font-size:15px; }
-  .entry { display:flex; align-items:center; gap:12px; padding:9px 0; border-top:1px solid var(--line); font-size:14px; }
-  .entry:first-of-type { border-top:0; }
-  .entry .ic { width:34px; height:34px; border-radius:10px; background:var(--bg); display:grid; place-items:center; }
-  .entry .tx { flex:1; } .entry .tx small { display:block; color:var(--muted); font-size:12px; }
-  .entry .am { font-weight:700; }
   .empty { color:var(--muted); font-size:14px; padding:8px 0; }
+
+  /* Orders (AG Grid) */
+  .orders { margin-top:26px; background:var(--card); border:1px solid var(--line); border-radius:18px; padding:16px 18px 18px; }
+  .ohead { display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+  .ohead h3 { margin:0; font-size:16px; }
+  .ohead .sub { color:var(--muted); font-size:12px; }
+  .saved { margin-left:auto; padding:5px 12px; border-radius:99px; background:#ecfdf5; border:1px solid #a7f3d0; color:#047857; font-size:12px; font-weight:700; }
+  .csv { padding:6px 12px; border:1px solid var(--line); background:#fff; border-radius:10px; font-size:12px; font-weight:600; cursor:pointer; }
+  .csv:hover { border-color:var(--accent); color:var(--accent); }
+  #ordersGrid { height:330px; width:100%; }
+  .sb { display:inline-block; padding:2px 10px; border-radius:99px; font-size:12px; font-weight:700; line-height:20px; }
+  .sb-paid { background:#d1fae5; color:#047857; }
+  .sb-wait { background:#fef3c7; color:#b45309; }
+  .sb-bad { background:#fee2e2; color:#b91c1c; }
+  .sb-muted { background:#e5e7eb; color:#4b5563; }
 
   .chatbox { position:sticky; top:84px; height:calc(100vh - 108px); min-height:460px; background:var(--card); border:1px solid var(--line); border-radius:20px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 30px rgba(30,40,90,.07); }
   .chead { padding:14px 16px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:10px; }
@@ -116,7 +126,7 @@
 </div></div>
 
 <div class="main">
-  <section>
+  <section class="left">
     <div class="hero">
       <h2>Let your agent haggle for you</h2>
       <p>Pick a product, set the most you will pay. A buyer agent negotiates with the seller agent, and your spending rules are checked in code. Money moves only after you approve on PayPal.</p>
@@ -124,8 +134,13 @@
     <div class="grid" id="grid"></div>
 
     <div class="orders">
-      <h3>Your orders</h3>
-      <div id="log"></div>
+      <div class="ohead">
+        <h3>Orders and agent activity</h3>
+        <span class="sub">sortable, filterable</span>
+        <span class="saved" id="savedPill">Saved so far: $0</span>
+        <button class="csv" id="csvBtn">Export CSV</button>
+      </div>
+      <div id="ordersGrid"></div>
     </div>
   </section>
 
@@ -138,7 +153,7 @@
     </form>
   </aside>
 </div>
-<footer>PayPal Orders API · agent-to-agent negotiation · human approval on PayPal</footer>
+<footer>PayPal Orders API · agent-to-agent negotiation · human approval on PayPal · table by AG Grid</footer>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -323,7 +338,62 @@ form.addEventListener("submit", (e) => {
 });
 $("search").addEventListener("input", renderProducts);
 
-/* ---------- budget + orders ---------- */
+/* ---------- orders table (AG Grid) ---------- */
+let gridApi = null;
+
+const STATUS = {
+  paid: ["Paid", "paid"],
+  awaiting_approval: ["Awaiting approval", "wait"],
+  cancelled: ["Cancelled", "bad"],
+  blocked: ["Blocked by rule", "bad"],
+  no_deal: ["No deal", "muted"],
+};
+
+function statusRenderer(p) {
+  const info = STATUS[p.value] || [p.value, "muted"];
+  return el("span", "sb sb-" + info[1], info[0]);
+}
+const moneyOrDash = (p) => (p.value == null ? "—" : money(p.value));
+
+function initGrid() {
+  if (typeof agGrid === "undefined") {
+    $("ordersGrid").textContent = "Table load nahi hui (AG Grid script block ho gayi).";
+    $("csvBtn").style.display = "none";
+    return;
+  }
+  gridApi = agGrid.createGrid($("ordersGrid"), {
+    rowData: [],
+    getRowId: (p) => p.data.orderId,
+    animateRows: true,
+    defaultColDef: { sortable: true, filter: true, resizable: true },
+    columnDefs: [
+      { headerName: "Time", field: "time", width: 115 },
+      { headerName: "Product", minWidth: 190, flex: 1.4, valueGetter: (p) => (p.data.emoji || "") + " " + p.data.product },
+      { headerName: "Listed", field: "listed", width: 105, type: "numericColumn", filter: "agNumberColumnFilter", valueFormatter: moneyOrDash },
+      { headerName: "Deal", field: "price", width: 105, type: "numericColumn", filter: "agNumberColumnFilter", valueFormatter: moneyOrDash },
+      {
+        headerName: "Saved", width: 110, type: "numericColumn", filter: "agNumberColumnFilter",
+        valueGetter: (p) => (p.data.price == null ? null : p.data.listed - p.data.price),
+        valueFormatter: moneyOrDash,
+      },
+      { headerName: "Status", field: "status", width: 175, cellRenderer: statusRenderer },
+      { headerName: "Order ID", field: "orderId", minWidth: 150, flex: 1 },
+    ],
+  });
+  $("csvBtn").onclick = () => gridApi.exportDataAsCsv({ fileName: "paykite-orders.csv" });
+}
+
+async function loadOrders() {
+  let rows;
+  try { rows = await (await fetch("/api/orders")).json(); } catch { return; }
+  if (gridApi) gridApi.setGridOption("rowData", rows);
+  const saved = rows
+    .filter((o) => o.status === "paid" && o.price != null)
+    .reduce((s, o) => s + (o.listed - o.price), 0);
+  $("savedPill").textContent = "Saved so far: " + money(saved);
+}
+
+/* ---------- budget ---------- */
 async function refreshState() {
   let s;
   try { s = await (await fetch("/api/state")).json(); } catch { return; }
@@ -331,22 +401,12 @@ async function refreshState() {
   $("left").textContent = money(s.left);
   $("barFill").style.width = Math.min(100, (s.spent / s.monthlyBudget) * 100) + "%";
   $("ruleText").textContent = `Your string: max ${money(s.maxPerOrder)} per order, ${money(s.monthlyBudget)} per month`;
-
-  const log = $("log"); log.innerHTML = "";
-  if (!s.history.length) { log.appendChild(el("div", "empty", "Abhi koi order nahi.")); return; }
-  s.history.forEach((h) => {
-    const d = el("div", "entry");
-    d.appendChild(el("div", "ic", "🛍️"));
-    const tx = el("div", "tx", h.label);
-    tx.appendChild(el("small", "", h.time));
-    d.appendChild(tx);
-    d.appendChild(el("div", "am", money(h.amount)));
-    log.appendChild(d);
-  });
+  loadOrders();
 }
 
 /* ---------- start ---------- */
 (async function init() {
+  initGrid();
   try { PRODUCTS = await (await fetch("/api/products")).json(); } catch { PRODUCTS = []; }
   renderProducts();
   addBot("Namaste! Kisi bhi product par Haggle and buy dabao, ya yahan likho: headphones chahiye, 40 dollar se zyada nahi. Main seller se mol-bhav karunga, par paisa tabhi katega jab aap PayPal par approve karenge.");

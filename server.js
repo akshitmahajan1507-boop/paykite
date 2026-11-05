@@ -1,7 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const { parseRequest } = require("./parse");
-const { startPurchase, finalizePurchase } = require("./shop");
+const { startPurchase, finalizePurchase, getOrders, markCancelled } = require("./shop");
 const { getState } = require("./rules");
 const { PRODUCTS } = require("./catalog");
 
@@ -9,6 +9,7 @@ const app = express();
 app.set("trust proxy", true); // Render par sahi https link ke liye
 app.use(express.json());
 app.use(express.static("public"));
+
 // Simple rate limit: ek IP se 1 minute mein max 6 shopping requests
 const hits = new Map();
 function limiter(req, res, next) {
@@ -33,9 +34,7 @@ const baseUrl = (req) => `${req.protocol}://${req.get("host")}`;
 
 // Store ke products (seller ka minPrice kabhi nahi bhejte)
 app.get("/api/products", (req, res) => {
-  res.json(
-    PRODUCTS.map(({ minPrice, ...publicInfo }) => publicInfo)
-  );
+  res.json(PRODUCTS.map(({ minPrice, ...publicInfo }) => publicInfo));
 });
 
 app.post("/api/shop", async (req, res) => {
@@ -98,7 +97,10 @@ app.get("/return", async (req, res) => {
 
 app.get("/cancel", (req, res) => {
   const orderId = String(req.query.token || "");
-  if (orderId) results.set(orderId, { status: "cancelled" });
+  if (orderId) {
+    results.set(orderId, { status: "cancelled" });
+    markCancelled(orderId);
+  }
   res.send(page("Payment cancel", "Aapne PayPal par cancel kiya. Koi paisa nahi gaya. Paykite par wapas jao."));
 });
 
@@ -108,6 +110,7 @@ app.get("/api/order/:id", (req, res) => {
 });
 
 app.get("/api/state", (req, res) => res.json(getState()));
+app.get("/api/orders", (req, res) => res.json(getOrders()));
 
 function page(title, text) {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
