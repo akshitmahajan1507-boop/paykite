@@ -11,6 +11,14 @@ function num(v) {
   return NaN;
 }
 
+function hostOf(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
 function normalize(p) {
   if (!p || !p.title) return null;
   const offers = (Array.isArray(p.offers) ? p.offers : [])
@@ -30,6 +38,13 @@ function normalize(p) {
     (Array.isArray(p.brands) && p.brands[0] && p.brands[0].name) || (p.brand && p.brand.name) || "";
   const images = Array.isArray(p.images) ? p.images : [];
   const img = images.find((i) => JSON.stringify(i).includes("hero")) || images[0];
+  const url = typeof offer.url === "string" ? offer.url : "";
+  const merchant =
+    offer.merchant_domain ||
+    offer.merchant_name ||
+    (typeof offer.merchant === "string" ? offer.merchant : offer.merchant && offer.merchant.name) ||
+    offer.domain ||
+    hostOf(url);
 
   return {
     id: "c3_" + String(p.id),
@@ -40,8 +55,8 @@ function normalize(p) {
     minPrice: Math.ceil(price * 0.8), // DEMO seller rule: asli merchants mol-bhav nahi karte
     tags: [],
     brand,
-    merchant: offer.merchant_domain || "",
-    url: typeof offer.url === "string" ? offer.url : "",
+    merchant,
+    url,
     live: true,
   };
 }

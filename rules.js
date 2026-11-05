@@ -1,7 +1,7 @@
 // Tumhari "dor": ye limits code mein hain, AI inhe badal nahi sakta
 const rules = {
-  maxPerOrder: 50,     // ek kharid ki upper limit (USD)
-  monthlyBudget: 200,  // mahine ka total budget (USD)
+  maxPerOrder: 60,     // $50 wala product pass ho, $77 aur $100 wale block hon
+  monthlyBudget: 300,
 };
 
 // Is mahine ab tak kitna kharch hua (server restart par reset hota hai)
