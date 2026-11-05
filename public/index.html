@@ -31,15 +31,28 @@
 
   .main { max-width:1280px; margin:0 auto; padding:20px; display:grid; grid-template-columns:1fr 390px; gap:22px; align-items:start; }
   .left { min-width:0; }
-  .hero { padding:22px 24px; border-radius:20px; color:#fff; margin-bottom:20px; background:linear-gradient(120deg,#4f46e5,#06b6d4); }
+  .hero { padding:22px 24px; border-radius:20px; color:#fff; margin-bottom:18px; background:linear-gradient(120deg,#4f46e5,#06b6d4); }
   .hero h2 { margin:0 0 6px; font-size:22px; letter-spacing:-.4px; }
   .hero p { margin:0; opacity:.9; font-size:14px; line-height:1.5; max-width:560px; }
+
+  .tabs { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+  .tab { padding:9px 16px; border:1px solid var(--line); background:#fff; border-radius:99px; font-weight:700; font-size:13px; cursor:pointer; color:var(--muted); }
+  .tab.on { background:var(--text); color:#fff; border-color:var(--text); }
+  .tab small { opacity:.7; font-weight:600; }
+  .livenote { display:none; margin-bottom:14px; padding:10px 14px; border-radius:12px; background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; font-size:12.5px; line-height:1.5; }
+
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:16px; }
   .pcard { background:var(--card); border:1px solid var(--line); border-radius:18px; overflow:hidden; display:flex; flex-direction:column; transition:.2s; }
   .pcard:hover { transform:translateY(-3px); box-shadow:0 10px 28px rgba(30,40,90,.1); }
-  .pimg { height:120px; display:grid; place-items:center; font-size:56px; background:linear-gradient(135deg,#eef0ff,#e6f9fd); }
+  .pimg { height:130px; display:grid; place-items:center; font-size:56px; background:linear-gradient(135deg,#eef0ff,#e6f9fd); overflow:hidden; }
+  .pimg.live { background:#fff; border-bottom:1px solid var(--line); }
+  .pimg img { max-width:100%; max-height:130px; object-fit:contain; }
   .pbody { padding:13px 14px 14px; display:flex; flex-direction:column; gap:8px; flex:1; }
   .pname { font-weight:700; font-size:14px; line-height:1.3; }
+  .pname.clamp { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; min-height:36px; }
+  .meta { font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .livechip { display:inline-block; font-size:10px; font-weight:800; color:#1d4ed8; background:#dbeafe; padding:1px 7px; border-radius:99px; letter-spacing:.05em; margin-right:6px; }
+  .mlink { font-size:11px; color:var(--accent); text-decoration:none; }
   .pprice { font-size:20px; font-weight:800; letter-spacing:-.5px; }
   .pprice small { font-size:11px; color:var(--ok); font-weight:600; margin-left:6px; }
   .budget { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
@@ -50,7 +63,6 @@
   .buy:disabled { opacity:.45; cursor:default; }
   .empty { color:var(--muted); font-size:14px; padding:8px 0; }
 
-  /* Orders (AG Grid) */
   .orders { margin-top:26px; background:var(--card); border:1px solid var(--line); border-radius:18px; padding:16px 18px 18px; }
   .ohead { display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
   .ohead h3 { margin:0; font-size:16px; }
@@ -131,6 +143,15 @@
       <h2>Let your agent haggle for you</h2>
       <p>Pick a product, set the most you will pay. A buyer agent negotiates with the seller agent, and your spending rules are checked in code. Money moves only after you approve on PayPal.</p>
     </div>
+
+    <div class="tabs">
+      <button class="tab on" id="tabDemo">🛍️ Demo store</button>
+      <button class="tab" id="tabLive">🌐 Live catalog <small>by Channel3</small></button>
+    </div>
+    <div class="livenote" id="liveNote">
+      Product data (title, photo, price) comes live from Channel3. The seller agent and its minimum price are <b>simulated for this demo</b>, since real stores do not haggle. Payment is <b>PayPal sandbox</b>: no real purchase is made.
+    </div>
+
     <div class="grid" id="grid"></div>
 
     <div class="orders">
@@ -153,7 +174,7 @@
     </form>
   </aside>
 </div>
-<footer>PayPal Orders API · agent-to-agent negotiation · human approval on PayPal · table by AG Grid</footer>
+<footer>PayPal Orders API · agent-to-agent negotiation · human approval on PayPal · table by AG Grid · product data by Channel3</footer>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -164,6 +185,8 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 const scrollDown = () => { messages.scrollTop = messages.scrollHeight; };
 
 let PRODUCTS = [];
+let LIVE = [];
+let mode = "demo";
 let busy = false;
 
 /* ---------- chat helpers ---------- */
@@ -220,7 +243,7 @@ function showDeal(r) {
   if (saved > 0) big.appendChild(el("span", "save", "saved " + money(saved)));
   card.appendChild(big);
 
-  const hint = el("div", "hint", "Paisa tabhi katega jab aap PayPal par approve karenge.");
+  const hint = el("div", "hint", "Paisa tabhi katega jab aap PayPal (sandbox) par approve karenge.");
   const btn = el("button", "paybtn", "Pay " + money(r.price) + " with PayPal");
   btn.onclick = () => {
     window.open(r.approveUrl, "_blank");
@@ -240,7 +263,7 @@ async function waitForPayment(r, btn) {
     if (s.status === "waiting" || s.status === "unknown") continue;
     if (s.status === "paid") {
       btn.textContent = "Paid ✓";
-      addNotice("ok", "🎉 Order confirmed", `${s.title} ke ${money(s.price)} PayPal se pay ho gaye.`);
+      addNotice("ok", "🎉 Order confirmed", `${s.title} ke ${money(s.price)} PayPal (sandbox) se pay ho gaye.`);
     } else if (s.status === "cancelled") {
       btn.textContent = "Cancelled";
       addNotice("bad", "Payment cancel", "Aapne PayPal par cancel kiya. Koi paisa nahi gaya.");
@@ -255,19 +278,44 @@ async function waitForPayment(r, btn) {
 }
 
 /* ---------- store: products ---------- */
+function fillImage(box, p) {
+  if (p.image && /^https:\/\//.test(p.image)) {
+    const im = document.createElement("img");
+    im.src = p.image; im.alt = ""; im.loading = "lazy"; im.referrerPolicy = "no-referrer";
+    im.onerror = () => { im.remove(); box.textContent = p.emoji || "🛍️"; };
+    box.appendChild(im);
+  } else {
+    box.textContent = p.emoji || "📦";
+  }
+}
+
 function renderProducts() {
+  const live = mode === "live";
   const q = $("search").value.trim().toLowerCase();
   const grid = $("grid"); grid.innerHTML = "";
-  const list = PRODUCTS.filter((p) => !q || (p.name + " " + p.tags.join(" ")).toLowerCase().includes(q));
+  const list = live
+    ? LIVE
+    : PRODUCTS.filter((p) => !q || (p.name + " " + p.tags.join(" ")).toLowerCase().includes(q));
   if (!list.length) { grid.appendChild(el("div", "empty", "Koi product nahi mila.")); return; }
 
   list.forEach((p) => {
     const card = el("div", "pcard");
-    card.appendChild(el("div", "pimg", p.emoji));
+    const imgBox = el("div", "pimg" + (live ? " live" : ""));
+    fillImage(imgBox, p);
+    card.appendChild(imgBox);
+
     const body = el("div", "pbody");
-    body.appendChild(el("div", "pname", p.name));
+    body.appendChild(el("div", "pname" + (live ? " clamp" : ""), p.name));
+
+    if (live) {
+      const meta = el("div", "meta");
+      meta.appendChild(el("span", "livechip", "LIVE"));
+      meta.appendChild(document.createTextNode([p.brand, p.merchant].filter(Boolean).join(" · ")));
+      body.appendChild(meta);
+    }
+
     const price = el("div", "pprice", money(p.price));
-    price.appendChild(el("small", "", "haggle-able"));
+    price.appendChild(el("small", "", live ? "demo seller" : "haggle-able"));
     body.appendChild(price);
 
     const budget = el("div", "budget");
@@ -281,6 +329,12 @@ function renderProducts() {
     btn.onclick = () => buyProduct(p, Number(inp.value));
     body.appendChild(btn);
 
+    if (live && p.url && /^https:\/\//.test(p.url)) {
+      const a = el("a", "mlink", "View on merchant site ↗");
+      a.href = p.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+      body.appendChild(a);
+    }
+
     card.appendChild(body);
     grid.appendChild(card);
   });
@@ -292,6 +346,43 @@ function setBusy(v) {
   document.querySelectorAll(".buy").forEach((b) => (b.disabled = v));
   sendBtn.disabled = v; input.disabled = v;
 }
+
+/* ---------- demo / live switch ---------- */
+async function loadLive(q) {
+  const grid = $("grid"); grid.innerHTML = "";
+  grid.appendChild(el("div", "empty", "Channel3 se live products la raha hoon..."));
+  try {
+    const r = await fetch("/api/live-products?q=" + encodeURIComponent(q));
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "error");
+    LIVE = data;
+    renderProducts();
+  } catch (e) {
+    addNotice("bad", "Live catalog nahi mila", "Demo store par wapas ja raha hoon.");
+    setMode("demo");
+  }
+}
+
+function setMode(m) {
+  mode = m;
+  $("tabDemo").classList.toggle("on", m === "demo");
+  $("tabLive").classList.toggle("on", m === "live");
+  $("liveNote").style.display = m === "live" ? "block" : "none";
+  $("search").placeholder = m === "live" ? "Live products dhundo (jaise: yoga mat) aur Enter dabao" : "Search products...";
+  $("search").value = "";
+  if (m === "live") loadLive("wireless headphones");
+  else renderProducts();
+}
+
+$("tabDemo").onclick = () => setMode("demo");
+$("tabLive").onclick = () => setMode("live");
+$("search").addEventListener("input", () => { if (mode === "demo") renderProducts(); });
+$("search").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && mode === "live") {
+    e.preventDefault();
+    loadLive($("search").value.trim() || "wireless headphones");
+  }
+});
 
 /* ---------- main flow ---------- */
 async function run(userText, body, showParsed) {
@@ -326,7 +417,7 @@ async function run(userText, body, showParsed) {
 
 function buyProduct(p, budget) {
   if (!(budget > 0)) { addNotice("bad", "Budget?", "Pehle max budget daalo."); return; }
-  run(`${p.emoji} ${p.name} khareedo, max ${money(budget)}`, { productId: p.id, maxBudget: budget }, false);
+  run(`${p.emoji || "🛍️"} ${p.name} khareedo, max ${money(budget)}`, { productId: p.id, maxBudget: budget }, false);
 }
 
 form.addEventListener("submit", (e) => {
@@ -336,7 +427,6 @@ form.addEventListener("submit", (e) => {
   input.value = "";
   run(t, { message: t }, true);
 });
-$("search").addEventListener("input", renderProducts);
 
 /* ---------- orders table (AG Grid) ---------- */
 let gridApi = null;
@@ -409,7 +499,7 @@ async function refreshState() {
   initGrid();
   try { PRODUCTS = await (await fetch("/api/products")).json(); } catch { PRODUCTS = []; }
   renderProducts();
-  addBot("Namaste! Kisi bhi product par Haggle and buy dabao, ya yahan likho: headphones chahiye, 40 dollar se zyada nahi. Main seller se mol-bhav karunga, par paisa tabhi katega jab aap PayPal par approve karenge.");
+  addBot("Namaste! Kisi bhi product par Haggle and buy dabao, ya yahan likho: headphones chahiye, 40 dollar se zyada nahi. Live catalog tab mein Channel3 ke asli products bhi hain. Main seller se mol-bhav karunga, par paisa tabhi katega jab aap PayPal par approve karenge.");
   refreshState();
 })();
 </script>

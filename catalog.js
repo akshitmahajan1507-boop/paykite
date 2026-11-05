@@ -13,23 +13,28 @@ const PRODUCTS = [
   { id: "p12", name: "Notebook Set (3 pack)",   emoji: "📓", price: 12, minPrice: 9,  tags: ["notebook", "study", "stationery"] },
 ];
 
+// Channel3 se aaye live products (server memory mein, price sirf server se aata hai)
+const LIVE = new Map();
+
+function registerLive(items) {
+  items.forEach((p) => LIVE.set(p.id, p));
+  while (LIVE.size > 300) LIVE.delete(LIVE.keys().next().value);
+}
+
 // Naam ya tag se product dhundna
 function searchProducts(query, maxPrice) {
-  const words = String(query || "")
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
+  const words = String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
 
   return PRODUCTS.filter((p) => {
     const text = (p.name + " " + p.tags.join(" ")).toLowerCase();
     const matches = words.length === 0 || words.some((w) => text.includes(w));
-    const affordable = !maxPrice || p.price <= maxPrice * 1.5; // thoda upar bhi dikhao, mol-bhav ke liye
+    const affordable = !maxPrice || p.price <= maxPrice * 1.5;
     return matches && affordable;
   }).map(({ minPrice, ...publicInfo }) => publicInfo); // minPrice kabhi bahar nahi jata
 }
 
 function getProduct(id) {
-  return PRODUCTS.find((p) => p.id === id);
+  return PRODUCTS.find((p) => p.id === id) || LIVE.get(id);
 }
 
-module.exports = { PRODUCTS, searchProducts, getProduct };
+module.exports = { PRODUCTS, searchProducts, getProduct, registerLive };
